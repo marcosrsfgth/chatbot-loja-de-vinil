@@ -207,7 +207,7 @@ public class Bot {
     }
 
     private void cadastrarPerguntas() {
-        cadastrarSaudacao("Olá! Bem-vindo à Vinil Vivo, sua loja de discos. Em que posso ajudar?");
+        cadastrarSaudacao("Olá! Bem-vindo à Vinil, sua loja de discos. Em que posso ajudar?");
 
         cadastrar("Tudo bem?",
                 "Sim, tudo ótimo! E com você?",
