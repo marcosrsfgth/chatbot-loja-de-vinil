@@ -3,7 +3,7 @@ import java.util.*;
 
 public class Bot {
 
-    private static final String NOME_LOJA = "Vinil Vivo";
+    private static final String NOME_LOJA = "Vinil";
     private static final String NAO_ENTENDI = "Desculpe, não entendi sua pergunta. Pode reformular?";
 
     private static final double CONFIANCA_MINIMA = 0.5;
