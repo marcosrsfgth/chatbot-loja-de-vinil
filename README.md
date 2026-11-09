@@ -1,4 +1,4 @@
-# Chatbot com Sockets em Java: Loja de Discos Vinil Vivo
+# Chatbot com Sockets em Java: Loja de Discos Vinil
 
 Chatbot em que o **servidor é o bot** (fica esperando mensagens) e o **cliente é o usuário** (digita as perguntas). A comunicação usa sockets TCP e atende **um cliente por vez**.
 
