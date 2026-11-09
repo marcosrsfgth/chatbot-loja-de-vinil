@@ -71,7 +71,7 @@ java -cp "lib/*:." ClienteGrafico
 
 ```
 Você: Oi
-Bot: Olá! Bem-vindo à Vinil Vivo, sua loja de discos. Em que posso ajudar?
+Bot: Olá! Bem-vindo à Vinil, sua loja de discos. Em que posso ajudar?
 Você: que horas vocês abrem?
 Bot: Abrimos de segunda a sábado, das 10h às 19h.
 Você: Vocês têm o disco Abbey Road?
