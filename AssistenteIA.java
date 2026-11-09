@@ -1,3 +1,8 @@
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -5,8 +10,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class AssistenteIA {
 
@@ -31,6 +34,7 @@ public class AssistenteIA {
     private final String urlBase;
     private final String instrucoes;
     private final HttpClient http;
+    private final ObjectMapper objectMapper;
 
     public AssistenteIA(String instrucoes) {
         this.instrucoes = instrucoes;
@@ -41,6 +45,7 @@ public class AssistenteIA {
         this.urlBase = ambiente(ENV_URL, URL_PADRAO).replaceAll("/+$", "");
         this.http = (chave == null) ? null
                 : HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(SEGUNDOS_CONEXAO)).build();
+        this.objectMapper = new ObjectMapper();
     }
 
     public String status() {
@@ -56,6 +61,8 @@ public class AssistenteIA {
             return null;
         }
         try {
+            String jsonCorpo = montarCorpo(mensagem);
+
             HttpRequest.Builder pedido = HttpRequest.newBuilder(URI.create(urlBase + "/v1/messages"))
                     .timeout(Duration.ofSeconds(SEGUNDOS_RESPOSTA))
                     .header("content-type", "application/json")
@@ -66,7 +73,7 @@ public class AssistenteIA {
             }
 
             HttpResponse<String> resposta = http.send(
-                    pedido.POST(HttpRequest.BodyPublishers.ofString(montarCorpo(mensagem), StandardCharsets.UTF_8)).build(),
+                    pedido.POST(HttpRequest.BodyPublishers.ofString(jsonCorpo, StandardCharsets.UTF_8)).build(),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
             if (resposta.statusCode() != 200) {
@@ -95,67 +102,40 @@ public class AssistenteIA {
         }
     }
 
-    private String montarCorpo(String mensagem) {
-        return "{"
-                + "\"model\":\"" + escapar(modelo) + "\","
-                + "\"max_tokens\":" + MAX_TOKENS + ","
-                + "\"thinking\":{\"type\":\"disabled\"},"
-                + "\"output_config\":{\"effort\":\"low\"},"
-                + "\"system\":\"" + escapar(instrucoes) + "\","
-                + "\"messages\":[{\"role\":\"user\",\"content\":\"" + escapar(mensagem) + "\"}]"
-                + "}";
+    private String montarCorpo(String mensagem) throws IOException {
+        ObjectNode json = objectMapper.createObjectNode();
+        json.put("model", modelo);
+        json.put("max_tokens", MAX_TOKENS);
+
+        ObjectNode thinking = json.putObject("thinking");
+        thinking.put("type", "disabled");
+
+        ObjectNode outputConfig = json.putObject("output_config");
+        outputConfig.put("effort", "low");
+
+        json.put("system", instrucoes);
+
+        ArrayNode messages = json.putArray("messages");
+        ObjectNode msgUser = messages.addObject();
+        msgUser.put("role", "user");
+        msgUser.put("content", mensagem);
+
+        return objectMapper.writeValueAsString(json);
     }
 
-    private static String escapar(String s) {
-        StringBuilder sb = new StringBuilder();
-        for (char c : s.toCharArray()) {
-            switch (c) {
-                case '"':  sb.append("\\\""); break;
-                case '\\': sb.append("\\\\"); break;
-                case '\n': sb.append("\\n"); break;
-                case '\r': sb.append("\\r"); break;
-                case '\t': sb.append("\\t"); break;
-                default:
-                    if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
+    private String extrairTexto(String jsonResposta) {
+        try {
+            JsonNode root = objectMapper.readTree(jsonResposta);
+            JsonNode content = root.path("content");
+            if (content.isArray()) {
+                for (JsonNode node : content) {
+                    if ("text".equals(node.path("type").asText())) {
+                        return node.path("text").asText();
                     }
-            }
-        }
-        return sb.toString();
-    }
-
-    static String extrairTexto(String json) {
-        Matcher m = Pattern.compile("\"text\"\\s*:\\s*\"").matcher(json);
-        while (m.find()) {
-            StringBuilder sb = new StringBuilder();
-            boolean fechou = false;
-            for (int i = m.end(); i < json.length() && !fechou; i++) {
-                char c = json.charAt(i);
-                if (c == '"') {
-                    fechou = true;
-                } else if (c == '\\' && i + 1 < json.length()) {
-                    char n = json.charAt(++i);
-                    switch (n) {
-                        case 'n': sb.append('\n'); break;
-                        case 't': sb.append('\t'); break;
-                        case 'r': sb.append('\r'); break;
-                        case 'b': sb.append('\b'); break;
-                        case 'f': sb.append('\f'); break;
-                        case 'u':
-                            sb.append((char) Integer.parseInt(json.substring(i + 1, i + 5), 16));
-                            i += 4;
-                            break;
-                        default: sb.append(n);
-                    }
-                } else {
-                    sb.append(c);
                 }
             }
-            if (fechou && sb.length() > 0) {
-                return sb.toString();
-            }
+        } catch (Exception e) {
+            System.out.println("Erro ao processar JSON da IA: " + e.getMessage());
         }
         return null;
     }
