@@ -28,7 +28,7 @@ public class ClienteGrafico extends JFrame {
     private volatile boolean encerrando = false;
 
     public ClienteGrafico(Socket socket) throws IOException {
-        super("Chatbot - Loja de Discos Vinil Vivo");
+        super("Chatbot - Loja de Discos Vinil");
         this.socket = socket;
         this.entrada = new BufferedReader(
                 new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
