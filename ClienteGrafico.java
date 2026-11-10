@@ -27,6 +27,9 @@ public class ClienteGrafico extends JFrame {
 
     private volatile boolean encerrando = false;
 
+    private int inicioDigitando = -1;
+    private int pendentes = 0;
+
     public ClienteGrafico(Socket socket) throws IOException {
         super("Chatbot - Loja de Discos Vinil");
         this.socket = socket;
@@ -83,6 +86,7 @@ public class ClienteGrafico extends JFrame {
             return;
         }
         campo.setText("");
+        pendentes++;
         adicionar("Você", estiloVoce, texto);
 
         if (texto.equalsIgnoreCase("sair")) {
@@ -96,7 +100,7 @@ public class ClienteGrafico extends JFrame {
             String linha;
             while ((linha = entrada.readLine()) != null) {
                 String resposta = linha;
-                SwingUtilities.invokeLater(() -> adicionar("Bot", estiloBot, resposta));
+                SwingUtilities.invokeLater(() -> receber(resposta));
                 if (encerrando) {
                     break;
                 }
@@ -106,7 +110,15 @@ public class ClienteGrafico extends JFrame {
         SwingUtilities.invokeLater(this::finalizarConversa);
     }
 
+    private void receber(String resposta) {
+        if (pendentes > 0) {
+            pendentes--;
+        }
+        adicionar("Bot", estiloBot, resposta);
+    }
+
     private void finalizarConversa() {
+        pendentes = 0;
         campo.setEnabled(false);
         botaoEnviar.setEnabled(false);
         adicionarAviso(encerrando ? "Conversa encerrada. Pode fechar a janela."
@@ -118,6 +130,7 @@ public class ClienteGrafico extends JFrame {
     }
 
     private void adicionar(String autor, Style estiloAutor, String texto) {
+        removerDigitando();
         try {
             StyledDocument doc = conversa.getStyledDocument();
             doc.insertString(doc.getLength(), autor + ": ", estiloAutor);
@@ -125,15 +138,44 @@ public class ClienteGrafico extends JFrame {
             conversa.setCaretPosition(doc.getLength());
         } catch (BadLocationException e) {
         }
+        mostrarDigitando();
     }
 
     private void adicionarAviso(String texto) {
+        removerDigitando();
         try {
             StyledDocument doc = conversa.getStyledDocument();
             doc.insertString(doc.getLength(), texto + "\n\n", estiloAviso);
             conversa.setCaretPosition(doc.getLength());
         } catch (BadLocationException e) {
         }
+        mostrarDigitando();
+    }
+
+    private void mostrarDigitando() {
+        if (inicioDigitando >= 0 || pendentes == 0) {
+            return;
+        }
+        try {
+            StyledDocument doc = conversa.getStyledDocument();
+            inicioDigitando = doc.getLength();
+            doc.insertString(inicioDigitando, "Bot está digitando...", estiloAviso);
+            conversa.setCaretPosition(doc.getLength());
+        } catch (BadLocationException e) {
+            inicioDigitando = -1;
+        }
+    }
+
+    private void removerDigitando() {
+        if (inicioDigitando < 0) {
+            return;
+        }
+        try {
+            StyledDocument doc = conversa.getStyledDocument();
+            doc.remove(inicioDigitando, doc.getLength() - inicioDigitando);
+        } catch (BadLocationException e) {
+        }
+        inicioDigitando = -1;
     }
 
     public static void main(String[] args) {

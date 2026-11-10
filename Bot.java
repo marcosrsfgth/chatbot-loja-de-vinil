@@ -4,11 +4,21 @@ import java.util.*;
 public class Bot {
 
     private static final String NOME_LOJA = "Vinil";
-    private static final String NAO_ENTENDI = "Desculpe, não entendi sua pergunta. Pode reformular?";
+
+    private static final List<String> NAO_ENTENDI = Arrays.asList(
+            "Desculpe, não entendi sua pergunta. Pode reformular?",
+            "Hmm, essa eu não consegui entender. Pode perguntar de outro jeito?",
+            "Não tenho certeza do que você quis dizer. Posso ajudar com horários, preços, tipos de disco, endereço, entrega e formas de pagamento.");
+
+    private static final List<String> MENSAGEM_VAZIA = Arrays.asList(
+            "Pode mandar a sua pergunta, estou por aqui.",
+            "Não recebi nada por aqui. Em que posso ajudar?");
 
     private static final double CONFIANCA_MINIMA = 0.5;
 
     private static final int TAMANHO_MINIMO_PARA_TOLERAR_ERRO = 7;
+
+    private static final int MAXIMO_DE_MENSAGENS_NO_HISTORICO = 10;
 
     private static final Set<String> SAUDACOES = palavras(
             "oi", "ola", "opa", "salve", "eai", "hey", "hello", "bom", "boa", "dia", "tarde", "noite");
@@ -35,12 +45,14 @@ public class Bot {
 
     private static class Entrada {
         final String pergunta;
-        final String resposta;
+        final List<String> respostas;
+        final boolean listarNaAjuda;
         final List<String> palavrasChave = new ArrayList<>();
 
-        Entrada(String pergunta, String resposta, String[] palavrasChave) {
+        Entrada(String pergunta, List<String> respostas, boolean listarNaAjuda, String[] palavrasChave) {
             this.pergunta = pergunta;
-            this.resposta = resposta;
+            this.respostas = respostas;
+            this.listarNaAjuda = listarNaAjuda;
             for (String p : palavrasChave) {
                 boolean radical = p.endsWith("*");
                 String base = normalizar(radical ? p.substring(0, p.length() - 1) : p);
@@ -64,50 +76,110 @@ public class Bot {
 
     private final List<Entrada> entradas = new ArrayList<>();
     private final Map<String, Entrada> porPergunta = new HashMap<>();
-    private String respostaSaudacao = NAO_ENTENDI;
+    private final List<String[]> historico = new ArrayList<>();
+    private final Random sorteio = new Random();
+    private List<String> respostasSaudacao = NAO_ENTENDI;
+    private String ultimaResposta = "";
     private final AssistenteIA ia;
+    private final boolean iaPrimeiro;
 
     public Bot() {
         cadastrarPerguntas();
         this.ia = new AssistenteIA(montarInstrucoesDaIA());
+        String modo = System.getenv("BOT_MODO");
+        boolean classico = modo != null && normalizar(modo).equals("classico");
+        this.iaPrimeiro = ia.ativa() && !classico;
     }
 
     public String statusIA() {
-        return ia.status();
+        if (!ia.ativa()) {
+            return ia.status();
+        }
+        return ia.status() + (iaPrimeiro
+                ? " Modo natural: a IA responde primeiro e as respostas cadastradas são o plano B."
+                : " Modo clássico: a IA só é usada quando nenhuma pergunta cadastrada casa.");
+    }
+
+    public void novaConversa() {
+        historico.clear();
+        ultimaResposta = "";
     }
 
     public Resposta responder(String mensagem) {
+        if (mensagem.trim().isEmpty()) {
+            return new Resposta(escolher(MENSAGEM_VAZIA), "mensagem vazia");
+        }
+
+        Resposta resposta = decidir(mensagem);
+
+        historico.add(new String[] {"user", mensagem});
+        historico.add(new String[] {"assistant", resposta.texto});
+        while (historico.size() > MAXIMO_DE_MENSAGENS_NO_HISTORICO) {
+            historico.remove(0);
+            historico.remove(0);
+        }
+        return resposta;
+    }
+
+    private Resposta decidir(String mensagem) {
         String chave = normalizar(mensagem);
 
         if (chave.equals("ajuda")) {
-            List<String> perguntas = new ArrayList<>();
-            for (Entrada e : entradas) {
-                perguntas.add(e.pergunta);
+            return new Resposta(textoDaAjuda(), "ajuda");
+        }
+
+        boolean iaTentada = false;
+        if (iaPrimeiro) {
+            iaTentada = true;
+            String daIA = ia.perguntar(mensagem, historico);
+            if (daIA != null) {
+                return new Resposta(daIA, "IA");
             }
-            return new Resposta("Para encerrar, digite Sair. Você pode perguntar: "
-                    + String.join(" | ", perguntas), "ajuda");
         }
 
         Entrada exata = porPergunta.get(chave);
         if (exata != null) {
-            return new Resposta(exata.resposta, "pergunta cadastrada");
+            return new Resposta(escolher(exata.respostas), "pergunta cadastrada");
         }
 
         if (soSaudacao(chave)) {
-            return new Resposta(respostaSaudacao, "saudação");
+            return new Resposta(escolher(respostasSaudacao), "saudação");
         }
 
         Entrada parecida = buscarPorPalavrasChave(chave);
         if (parecida != null) {
-            return new Resposta(parecida.resposta, "palavras-chave -> \"" + parecida.pergunta + "\"");
+            return new Resposta(escolher(parecida.respostas), "palavras-chave -> \"" + parecida.pergunta + "\"");
         }
 
-        String daIA = ia.perguntar(mensagem);
-        if (daIA != null) {
-            return new Resposta(daIA, "IA");
+        if (!iaTentada) {
+            String daIA = ia.perguntar(mensagem, historico);
+            if (daIA != null) {
+                return new Resposta(daIA, "IA");
+            }
         }
 
-        return new Resposta(NAO_ENTENDI, "não entendi");
+        return new Resposta(escolher(NAO_ENTENDI), "não entendi");
+    }
+
+    private String escolher(List<String> opcoes) {
+        List<String> candidatas = new ArrayList<>(opcoes);
+        candidatas.remove(ultimaResposta);
+        if (candidatas.isEmpty()) {
+            candidatas = opcoes;
+        }
+        String escolhida = candidatas.get(sorteio.nextInt(candidatas.size()));
+        ultimaResposta = escolhida;
+        return escolhida;
+    }
+
+    private String textoDaAjuda() {
+        List<String> perguntas = new ArrayList<>();
+        for (Entrada e : entradas) {
+            if (e.listarNaAjuda) {
+                perguntas.add(e.pergunta);
+            }
+        }
+        return "Para encerrar, digite Sair. Você pode perguntar: " + String.join(" | ", perguntas);
     }
 
     private Entrada buscarPorPalavrasChave(String chave) {
@@ -195,86 +267,139 @@ public class Bot {
         return new HashSet<>(Arrays.asList(lista));
     }
 
-    private void cadastrar(String pergunta, String resposta, String... palavrasChave) {
-        Entrada e = new Entrada(pergunta, resposta, palavrasChave);
-        entradas.add(e);
-        porPergunta.put(normalizar(pergunta), e);
+    private static List<String> variantes(String... textos) {
+        return Arrays.asList(textos);
     }
 
-    private void cadastrarSaudacao(String resposta) {
-        cadastrar("Oi", resposta);
-        respostaSaudacao = resposta;
+    private void cadastrar(String pergunta, String resposta, String... palavrasChave) {
+        cadastrar(pergunta, variantes(resposta), palavrasChave);
+    }
+
+    private void cadastrar(String pergunta, List<String> respostas, String... palavrasChave) {
+        adicionarEntrada(new Entrada(pergunta, respostas, true, palavrasChave));
+    }
+
+    private void cadastrarConversa(String pergunta, List<String> respostas, String... palavrasChave) {
+        adicionarEntrada(new Entrada(pergunta, respostas, false, palavrasChave));
+    }
+
+    private void adicionarEntrada(Entrada e) {
+        entradas.add(e);
+        porPergunta.put(normalizar(e.pergunta), e);
+    }
+
+    private void cadastrarSaudacao(List<String> respostas) {
+        cadastrar("Oi", respostas);
+        respostasSaudacao = respostas;
     }
 
     private void cadastrarPerguntas() {
-        cadastrarSaudacao("Olá! Bem-vindo à Vinil, sua loja de discos. Em que posso ajudar?");
+        cadastrarSaudacao(variantes(
+                "Olá! Bem-vindo à Vinil, sua loja de discos. Em que posso ajudar?",
+                "Oi, tudo bem? Aqui é da Vinil! Como posso te ajudar hoje?",
+                "E aí! Seja bem-vindo à Vinil. O que você está procurando?"));
 
         cadastrar("Tudo bem?",
-                "Sim, tudo ótimo! E com você?",
+                variantes("Sim, tudo ótimo! E com você?",
+                        "Tudo certo por aqui! E você, como está?",
+                        "Tudo bem sim, obrigado por perguntar! Em que posso ajudar?"),
                 "tudo", "bem", "vai");
 
         cadastrar("Qual o horário de funcionamento?",
-                "Abrimos de segunda a sábado, das 10h às 19h.",
+                variantes("Abrimos de segunda a sábado, das 10h às 19h.",
+                        "Nosso horário é de segunda a sábado, das 10h às 19h. Esperamos você por lá!",
+                        "Ficamos abertos de segunda a sábado, das 10h às 19h."),
                 "hora*", "horário", "abre*", "abri*", "abert*", "fecha*", "funcion*", "expediente",
                 "domingo*", "sábado*", "feriado*");
 
         cadastrar("Vocês compram discos usados?",
-                "Sim! Avaliamos a sua coleção e pagamos em dinheiro ou em crédito na loja.",
+                variantes("Sim! Avaliamos a sua coleção e pagamos em dinheiro ou em crédito na loja.",
+                        "Compramos sim! A gente avalia a sua coleção e paga em dinheiro ou em crédito na loja."),
                 "compram", "compra", "usado*", "vender", "vendo", "troca*", "coleção", "avali*");
 
         cadastrar("Quais tipos de disco vocês vendem?",
-                "Vendemos vinis, CDs e fitas cassete, novos e usados.",
+                variantes("Vendemos vinis, CDs e fitas cassete, novos e usados.",
+                        "Trabalhamos com vinis, CDs e fitas cassete, tanto novos quanto usados."),
                 "tipo*", "vende", "vendem", "vendemos", "produto*", "trabalham", "vinil", "vinis",
                 "cd", "cds", "lp", "lps", "fita*", "cassete*", "usado*", "catálogo", "acervo");
 
         cadastrar("Quais gêneros musicais vocês têm?",
-                "Temos rock, MPB, samba, jazz, blues, soul e música eletrônica.",
+                variantes("Temos rock, MPB, samba, jazz, blues, soul e música eletrônica.",
+                        "Nosso acervo tem rock, MPB, samba, jazz, blues, soul e música eletrônica. Tem algum gênero preferido?"),
                 "gênero*", "estilo*", "música*", "rock", "mpb", "samba", "jazz", "blues", "soul",
                 "eletrônica");
 
         cadastrar("Quanto custa um disco?",
-                "Os vinis usados custam a partir de R$ 40,00 e os novos, a partir de R$ 120,00. Os CDs, a partir de R$ 25,00.",
+                variantes("Os vinis usados custam a partir de R$ 40,00 e os novos, a partir de R$ 120,00. Os CDs, a partir de R$ 25,00.",
+                        "Depende do formato: vinis usados a partir de R$ 40,00, vinis novos a partir de R$ 120,00 e CDs a partir de R$ 25,00."),
                 "quanto", "cust*", "preço*", "valor*", "barato*", "caro", "cobram",
                 "vinil", "vinis", "cd", "cds", "lp", "lps");
 
         cadastrar("Posso ouvir o disco antes de comprar?",
-                "Pode sim! Temos uma vitrola na loja para você testar antes de levar.",
+                variantes("Pode sim! Temos uma vitrola na loja para você testar antes de levar.",
+                        "Claro! Temos uma vitrola na loja justamente para você ouvir o disco antes de levar."),
                 "ouvir", "escut*", "testar", "teste*", "vitrola*", "provar");
 
         cadastrar("Vocês fazem encomenda?",
-                "Sim, encomendamos lançamentos e importados. O prazo é de 15 a 30 dias.",
+                variantes("Sim, encomendamos lançamentos e importados. O prazo é de 15 a 30 dias.",
+                        "Fazemos sim! Encomendamos lançamentos e importados, com prazo de 15 a 30 dias."),
                 "encomend*", "importad*", "importação", "lançamento*", "novidade*", "reserv*");
 
         cadastrar("Vocês fazem entrega?",
-                "Sim! Enviamos para todo o Brasil pelos Correios, com embalagem reforçada para proteger os discos.",
+                variantes("Sim! Enviamos para todo o Brasil pelos Correios, com embalagem reforçada para proteger os discos.",
+                        "Fazemos entrega sim: enviamos para todo o Brasil pelos Correios, com embalagem reforçada para proteger os discos."),
                 "entreg*", "envi*", "frete*", "correio*", "sedex", "mandam", "mandar", "prazo*");
 
         cadastrar("Qual o endereço?",
-                "Estamos na Rua da Música, 45, Centro.",
+                variantes("Estamos na Rua da Música, 45, Centro.",
+                        "Ficamos na Rua da Música, 45, no Centro. Passa lá!"),
                 "enderec*", "onde", "fica", "ficam", "localiz*", "local", "chegar", "rua", "bairro",
                 "cidade", "mapa", "perto");
 
         cadastrar("Quais as formas de pagamento?",
-                "Aceitamos dinheiro, cartões de crédito e débito e Pix.",
+                variantes("Aceitamos dinheiro, cartões de crédito e débito e Pix.",
+                        "Dá para pagar em dinheiro, no cartão de crédito ou débito e também por Pix."),
                 "formas", "pagament*", "pagar", "pago", "paga", "pix", "cartão", "cartões", "crédito",
                 "débito", "dinheiro", "parcel*", "boleto*", "aceit*");
+
+        cadastrarConversa("Obrigado!",
+                variantes("Imagina! Se precisar de mais alguma coisa, é só falar.",
+                        "Por nada! Qualquer dúvida, estou por aqui.",
+                        "Disponha! Foi um prazer ajudar."),
+                "obrigad*", "brigad*", "valeu", "agradec*", "grato", "grata");
+
+        cadastrarConversa("Tchau!",
+                variantes("Até mais! Se quiser encerrar a conversa, é só digitar Sair.",
+                        "Tchau! Quando quiser voltar, é só chamar. Para encerrar, digite Sair.",
+                        "Foi um prazer ajudar! Se quiser encerrar, digite Sair."),
+                "tchau", "adeus", "flw", "xau");
+
+        cadastrarConversa("Quem é você?",
+                variantes("Sou o atendente virtual da Vinil! Posso falar de horários, preços, tipos de disco, gêneros, entrega e muito mais.",
+                        "Eu sou o assistente virtual da Vinil, a sua loja de discos. Pode perguntar à vontade!"));
     }
 
     private String montarInstrucoesDaIA() {
         StringBuilder sb = new StringBuilder();
         sb.append("Você é o atendente virtual da loja de discos ").append(NOME_LOJA)
-                .append(", conversando por um chat simples de texto.\n\n");
+                .append(", conversando por um chat de texto.\n\n");
+        sb.append("Como conversar:\n");
+        sb.append("- Fale de forma natural, simpática e descontraída, como uma pessoa de verdade, com frases curtas (em geral de 1 a 3).\n");
+        sb.append("- Reescreva as informações com as suas próprias palavras, sem copiar o texto oficial, e varie a forma de começar as respostas.\n");
+        sb.append("- Use o histórico da conversa: entenda perguntas curtas como \"e os CDs?\" pelo assunto anterior e não repita o que já foi dito.\n");
+        sb.append("- Quando fizer sentido, termine com uma pergunta curta ou um convite para continuar a conversa.\n");
+        sb.append("- Escreva apenas texto puro: sem markdown, sem listas, sem emojis e sem quebras de linha.\n\n");
         sb.append("Regras:\n");
-        sb.append("- Responda em português do Brasil, com simpatia, em no máximo duas frases curtas.\n");
-        sb.append("- Escreva apenas texto puro: sem markdown, sem listas, sem emojis e sem quebras de linha.\n");
         sb.append("- Use SOMENTE as informações da loja listadas abaixo. Se a resposta não estiver nelas, ");
-        sb.append("diga que não tem essa informação e sugira ir até a loja. ");
+        sb.append("diga com naturalidade que não tem essa informação e sugira ir até a loja. ");
         sb.append("Nunca invente preços, títulos em estoque, prazos, promoções ou políticas.\n");
         sb.append("- Se a mensagem não tiver relação com a loja, diga educadamente que só pode ajudar com ");
         sb.append("assuntos da ").append(NOME_LOJA).append(".\n\n");
         sb.append("Informações da loja (pergunta e resposta oficial):\n");
         for (Entrada e : entradas) {
-            sb.append("- P: ").append(e.pergunta).append(" R: ").append(e.resposta).append("\n");
+            if (e.listarNaAjuda) {
+                sb.append("- P: ").append(e.pergunta).append(" R: ").append(e.respostas.get(0)).append("\n");
+            }
         }
         return sb.toString();
     }

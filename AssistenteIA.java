@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 
 public class AssistenteIA {
 
@@ -53,15 +54,19 @@ public class AssistenteIA {
             return "IA: desativada (defina a variável " + ENV_CHAVE + " para ativar). "
                     + "O bot usa só as respostas cadastradas e as palavras-chave.";
         }
-        return "IA: ativada (modelo " + modelo + "). Ela só é usada quando nenhuma pergunta cadastrada casa.";
+        return "IA: ativada (modelo " + modelo + ").";
     }
 
-    public String perguntar(String mensagem) {
+    public boolean ativa() {
+        return chave != null;
+    }
+
+    public String perguntar(String mensagem, List<String[]> historico) {
         if (chave == null) {
             return null;
         }
         try {
-            String jsonCorpo = montarCorpo(mensagem);
+            String jsonCorpo = montarCorpo(mensagem, historico);
 
             HttpRequest.Builder pedido = HttpRequest.newBuilder(URI.create(urlBase + "/v1/messages"))
                     .timeout(Duration.ofSeconds(SEGUNDOS_RESPOSTA))
@@ -102,7 +107,7 @@ public class AssistenteIA {
         }
     }
 
-    private String montarCorpo(String mensagem) throws IOException {
+    private String montarCorpo(String mensagem, List<String[]> historico) throws IOException {
         ObjectNode json = objectMapper.createObjectNode();
         json.put("model", modelo);
         json.put("max_tokens", MAX_TOKENS);
@@ -116,6 +121,11 @@ public class AssistenteIA {
         json.put("system", instrucoes);
 
         ArrayNode messages = json.putArray("messages");
+        for (String[] turno : historico) {
+            ObjectNode anterior = messages.addObject();
+            anterior.put("role", turno[0]);
+            anterior.put("content", turno[1]);
+        }
         ObjectNode msgUser = messages.addObject();
         msgUser.put("role", "user");
         msgUser.put("content", mensagem);

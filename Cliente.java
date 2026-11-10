@@ -32,7 +32,9 @@ public class Cliente {
                 }
 
                 saida.println(pergunta);
+                System.out.print("Bot está digitando...");
                 String resposta = entrada.readLine();
+                System.out.print("\r" + " ".repeat(25) + "\r");
                 if (resposta == null) {
                     System.out.println("O servidor encerrou a conexão.");
                     break;

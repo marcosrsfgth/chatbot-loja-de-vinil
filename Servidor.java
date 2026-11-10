@@ -7,6 +7,11 @@ public class Servidor {
     private static final int PORTA = 5000;
     private static final String DESPEDIDA = "Obrigado por utilizar nosso sistema!";
 
+    private static final boolean SIMULAR_DIGITACAO = Boolean.parseBoolean(System.getProperty("bot.digitacao", "true"));
+    private static final int ATRASO_BASE_MS = 500;
+    private static final int ATRASO_POR_CARACTERE_MS = 22;
+    private static final int ATRASO_MAXIMO_MS = 3000;
+
     public static void main(String[] args) {
         Bot bot = new Bot();
 
@@ -19,6 +24,7 @@ public class Servidor {
                 try (Socket cliente = servidor.accept()) {
                     System.out.println("Cliente conectado: "
                             + cliente.getInetAddress().getHostAddress());
+                    bot.novaConversa();
                     atender(cliente, bot);
                 } catch (IOException e) {
                     System.out.println("Conversa interrompida: " + e.getMessage());
@@ -42,14 +48,34 @@ public class Servidor {
             System.out.println("Cliente: " + mensagem);
 
             if (mensagem.trim().equalsIgnoreCase("sair")) {
+                simularDigitacao(DESPEDIDA, System.currentTimeMillis());
                 saida.println(DESPEDIDA);
                 System.out.println("Bot: " + DESPEDIDA);
                 break;
             }
 
+            long inicio = System.currentTimeMillis();
             Bot.Resposta resposta = bot.responder(mensagem);
+            simularDigitacao(resposta.texto, inicio);
             saida.println(resposta.texto);
             System.out.println("Bot [" + resposta.origem + "]: " + resposta.texto);
+        }
+    }
+
+    private static void simularDigitacao(String texto, long inicio) {
+        if (!SIMULAR_DIGITACAO) {
+            return;
+        }
+        double variacao = 0.8 + Math.random() * 0.4;
+        long alvo = (long) ((ATRASO_BASE_MS + ATRASO_POR_CARACTERE_MS * texto.length()) * variacao);
+        alvo = Math.min(alvo, ATRASO_MAXIMO_MS);
+        long falta = alvo - (System.currentTimeMillis() - inicio);
+        if (falta > 0) {
+            try {
+                Thread.sleep(falta);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }
