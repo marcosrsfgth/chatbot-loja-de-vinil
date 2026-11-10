@@ -8,9 +8,9 @@ public class Servidor {
     private static final String DESPEDIDA = "Obrigado por utilizar nosso sistema!";
 
     private static final boolean SIMULAR_DIGITACAO = Boolean.parseBoolean(System.getProperty("bot.digitacao", "true"));
-    private static final int ATRASO_BASE_MS = 500;
-    private static final int ATRASO_POR_CARACTERE_MS = 22;
-    private static final int ATRASO_MAXIMO_MS = 3000;
+    private static final int ATRASO_BASE_MS = 300;
+    private static final int ATRASO_POR_CARACTERE_MS = 14;
+    private static final int ATRASO_MAXIMO_MS = 2000;
 
     public static void main(String[] args) {
         Bot bot = new Bot();
