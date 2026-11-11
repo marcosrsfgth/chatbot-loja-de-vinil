@@ -3,7 +3,7 @@
 Chatbot de uma loja de discos fictícia, a Vinil, feito para uma atividade da faculdade. O servidor é o bot e fica esperando mensagens; os clientes (terminal ou janela) são os usuários. O servidor atende um cliente por vez.
 
 Sem chave de API, o bot responde só com perguntas cadastradas e palavras-chave. Com uma chave, ele também usa a API do Claude para conversar de forma mais livre. Se a IA falhar, ele volta para as respostas cadastradas.
-<img width="500" height="626" alt="image" src="https://github.com/user-attachments/assets/93a9ed58-8856-4069-b3c1-56d7ec5160fb" />
+<img width="480" height="500" alt="image" src="https://github.com/user-attachments/assets/93a9ed58-8856-4069-b3c1-56d7ec5160fb" />
 
 
 ## Como executar
